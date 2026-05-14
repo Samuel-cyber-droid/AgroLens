@@ -29,7 +29,8 @@ SECRET_KEY = 'django-insecure-_^ivh1khg90ov=b#j=&2gfxqhx_qf)f976%5)l#-*o7ir7*tw2
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = []
+ALLOWED_HOSTS = ['*'] # El asterisco permite que cualquier IP se conecte
+CORS_ALLOW_ALL_ORIGINS = True # Permite que el celular le hable a tu API
 
 
 # Application definition
