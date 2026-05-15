@@ -17,59 +17,80 @@ import base64
 @permission_classes([IsAuthenticated])
 def escanear_etiqueta(request):
     try:
-        # 1. Recibir la imagen en Base64 desde el Frontend
+        # 1. Recibir y limpiar la imagen
         imagen_b64 = request.data.get('imagen')
         if not imagen_b64:
             return Response({'error': 'No se proporcionó ninguna imagen'}, status=400)
 
-        # 2. Procesar la imagen para Google Vision
-        # Si la imagen viene con el prefijo "data:image/jpeg;base64,", lo quitamos
         if ',' in imagen_b64:
             imagen_b64 = imagen_b64.split(',')[1]
         
         content = base64.b64decode(imagen_b64)
 
-        # 3. Llamada a Google Cloud Vision API
-        # El cliente buscará automáticamente la llave en la variable de entorno que configuramos en Render
+        # 2. IA de Google Vision
         client = vision.ImageAnnotatorClient()
         image = vision.Image(content=content)
         
-        # Solicitamos detección de texto
         response = client.text_detection(image=image)
         annotations = response.text_annotations
 
         if not annotations:
-            return Response({'error': 'No se detectó ningún texto en la etiqueta. Intenta enfocar mejor.'}, status=400)
+            return Response({'error': 'No se detectó texto en la etiqueta. Intenta enfocar mejor.'}, status=400)
 
-        # La primera anotación contiene todo el bloque de texto detectado
         texto_extraido = annotations[0].description.upper()
 
         if response.error.message:
             raise Exception(f"Error de Google Vision: {response.error.message}")
 
-        # 4. Buscar coincidencias en el catálogo de productos (PostgreSQL)
-        producto_encontrado = None
-        productos = Producto.objects.all()
+        # 3. Búsqueda inicial del producto
+        producto_obj = None
+        for p in Producto.objects.all():
+            if p.nombre_comercial.upper() in texto_extraido or p.ingrediente_activo.upper() in texto_extraido:
+                producto_obj = p
+                break 
 
-        for p in productos:
-            nombre_comercial_upper = p.nombre_comercial.upper()
-            ingrediente_upper = p.ingrediente_activo.upper()
-            
-            # Verificamos si el nombre o ingrediente están presentes en lo leído por la IA
-            if nombre_comercial_upper in texto_extraido or ingrediente_upper in texto_extraido:
-                producto_encontrado = {
-                    'id': p.id,
-                    'nombre_comercial': p.nombre_comercial,
-                    'presentacion': p.presentacion,
-                    'stock_actual': p.stock_actual
-                }
-                break # Match encontrado, salimos del bucle
+        # 4. LÓGICA DE STOCK Y RECOMENDACIÓN
+        datos_producto = None
+        recomendaciones = []
+        mensaje = 'Texto leído, pero no coincide con el catálogo'
+
+        if producto_obj:
+            datos_producto = {
+                'id': producto_obj.id,
+                'nombre_comercial': producto_obj.nombre_comercial,
+                'presentacion': producto_obj.presentacion,
+                'stock_actual': producto_obj.stock_actual,
+                'ingrediente_activo': producto_obj.ingrediente_activo
+            }
+
+            if producto_obj.stock_actual > 0:
+                mensaje = 'Producto identificado correctamente y disponible en stock.'
+            else:
+                mensaje = f'¡Aviso! {producto_obj.nombre_comercial} NO TIENE STOCK. Buscando alternativas con {producto_obj.ingrediente_activo}...'
+                
+                # Buscamos en la BD productos con el mismo ingrediente, que tengan stock, y excluímos el que acabamos de escanear
+                alternativas = Producto.objects.filter(
+                    ingrediente_activo__iexact=producto_obj.ingrediente_activo,
+                    stock_actual__gt=0
+                ).exclude(id=producto_obj.id)
+
+                for alt in alternativas:
+                    recomendaciones.append({
+                        'id': alt.id,
+                        'nombre_comercial': alt.nombre_comercial,
+                        'presentacion': alt.presentacion,
+                        'stock_actual': alt.stock_actual
+                    })
+                
+                if not recomendaciones:
+                    mensaje = f'Producto sin stock. No hay alternativas disponibles para {producto_obj.ingrediente_activo}.'
 
         # 5. Respuesta al Frontend
         return Response({
             'texto_bruto': texto_extraido,
-            'producto_detectado': producto_encontrado,
-            'mensaje': 'Producto identificado correctamente' if producto_encontrado else 'Texto leído, pero no coincide con el catálogo'
+            'producto_detectado': datos_producto,
+            'recomendaciones': recomendaciones, # Enviamos la lista de opciones al celular
+            'mensaje': mensaje
         }, status=200)
 
     except Exception as e:

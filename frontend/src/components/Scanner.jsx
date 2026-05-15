@@ -8,6 +8,10 @@ export default function Scanner() {
   
   const [textoDetectado, setTextoDetectado] = useState('');
   const [productoDetectado, setProductoDetectado] = useState(null);
+  // 👇 NUEVOS ESTADOS PARA LAS RECOMENDACIONES 👇
+  const [recomendaciones, setRecomendaciones] = useState([]);
+  const [mensajeScanner, setMensajeScanner] = useState('');
+  
   const [procesando, setProcesando] = useState(false);
   const [errorCamera, setErrorCamera] = useState('');
   
@@ -46,6 +50,9 @@ export default function Scanner() {
     setProductoDetectado(null);
     setMensajeMovimiento('');
     setCantidad('');
+    // 👇 Limpiamos estados anteriores 👇
+    setRecomendaciones([]);
+    setMensajeScanner('');
 
     const video = videoRef.current;
     const canvas = canvasRef.current;
@@ -58,21 +65,25 @@ export default function Scanner() {
     const imagenBase64 = canvas.toDataURL('image/jpeg').split(',')[1];
 
     try {
-      // 1. Petición limpia usando Axios
       const respuesta = await api.post('inventario/escanear/', { 
         imagen: imagenBase64 
       });
 
-      // 2. Axios ya convirtió el JSON, lo sacamos de .data
       const datos = respuesta.data;
       
       setTextoDetectado(datos.texto_bruto || 'No se detectó texto.');
+      setMensajeScanner(datos.mensaje || ''); // Guardamos el mensaje de la IA
+      
       if (datos.producto_detectado) {
         setProductoDetectado(datos.producto_detectado);
       }
+      
+      // 👇 Guardamos las alternativas si existen 👇
+      if (datos.recomendaciones) {
+        setRecomendaciones(datos.recomendaciones);
+      }
 
     } catch (error) {
-      // 3. Axios atrapa los errores 400 o 500 automáticamente
       if (error.response && error.response.data && error.response.data.error) {
         setTextoDetectado(`Aviso: ${error.response.data.error}`);
       } else {
@@ -94,7 +105,6 @@ export default function Scanner() {
     setMensajeMovimiento('');
 
     try {
-      // Usamos Axios para enviar el movimiento
       const respuesta = await api.post('inventario/movimiento/', {
         producto_id: productoDetectado.id,
         tipo: tipo,
@@ -158,7 +168,11 @@ export default function Scanner() {
           <h3 style={{ margin: '0 0 10px 0', color: '#1565c0' }}>✅ Producto Reconocido</h3>
           <p style={{ margin: '5px 0', fontWeight: 'bold', fontSize: '18px' }}>{productoDetectado.nombre_comercial}</p>
           <p style={{ margin: '5px 0', color: '#555' }}>Presentación: {productoDetectado.presentacion}</p>
-          <p style={{ margin: '15px 0', fontSize: '16px' }}>Stock Actual: <strong>{productoDetectado.stock_actual}</strong></p>
+          
+          {/* El stock se pone rojo si es 0 */}
+          <p style={{ margin: '15px 0', fontSize: '16px' }}>
+            Stock Actual: <strong style={{ color: productoDetectado.stock_actual > 0 ? 'green' : 'red' }}>{productoDetectado.stock_actual}</strong>
+          </p>
 
           <div style={{ display: 'flex', gap: '10px', marginTop: '15px' }}>
             <input 
@@ -178,7 +192,7 @@ export default function Scanner() {
             </button>
             <button 
               onClick={() => registrarMovimiento('SALIDA')}
-              disabled={procesandoMovimiento}
+              disabled={procesandoMovimiento || productoDetectado.stock_actual <= 0}
               style={{ flex: 1, padding: '10px', backgroundColor: '#c62828', color: 'white', border: 'none', borderRadius: '5px', cursor: 'pointer', fontWeight: 'bold' }}
             >
               - Salida
@@ -188,6 +202,27 @@ export default function Scanner() {
           {mensajeMovimiento && (
             <p style={{ marginTop: '15px', textAlign: 'center', fontWeight: 'bold', color: '#333' }}>{mensajeMovimiento}</p>
           )}
+
+          {/* 🌟 BLOQUE DE RECOMENDACIONES 🌟 */}
+          {recomendaciones.length > 0 && (
+            <div style={{ marginTop: '20px', padding: '15px', borderRadius: '8px', backgroundColor: '#FFF3E0', border: '1px solid #FFB74D' }}>
+              <h4 style={{ color: '#E65100', margin: '0 0 10px 0', display: 'flex', alignItems: 'center', gap: '5px' }}>
+                ⚠️ Alternativas Sugeridas
+              </h4>
+              <p style={{ fontSize: '13px', color: '#E65100', marginBottom: '10px' }}>
+                {mensajeScanner}
+              </p>
+              <ul style={{ listStyleType: 'none', padding: '0', margin: '0' }}>
+                {recomendaciones.map((alt) => (
+                  <li key={alt.id} style={{ padding: '8px', borderBottom: '1px solid #FFE0B2', display: 'flex', justifyContent: 'space-between' }}>
+                    <strong>{alt.nombre_comercial} ({alt.presentacion})</strong>
+                    <span style={{ color: '#2E7D32', fontWeight: 'bold' }}>Stock: {alt.stock_actual}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
         </div>
       ) : textoDetectado ? (
         <div style={{ padding: '15px', backgroundColor: '#fff3e0', borderLeft: '5px solid #ff9800', borderRadius: '4px' }}>
