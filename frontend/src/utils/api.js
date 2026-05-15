@@ -5,7 +5,7 @@ import axios from 'axios';
 // Nota: Si en el futuro dejas de usar el celular y vuelves a desarrollar solo en la laptop, 
 // cambia esta IP de vuelta a "127.0.0.1"
 const api = axios.create({
-  baseURL: 'http://192.168.3.98:8000/api/', 
+  baseURL: 'https://agrolens-l9z7.onrender.com', 
 });
 
 // 2. INTERCEPTOR DE PETICIÓN: El "Gafete Automático"
@@ -37,7 +37,7 @@ api.interceptors.response.use(
         
         // Vamos a la ruta nativa de Django SimpleJWT para renovar llaves
         // Nota: Como no usamos 'api.post', esto no entra en un bucle infinito
-        const respuestaRefresh = await axios.post('http://192.168.X.X:8000/api/token/refresh/', {
+        const respuestaRefresh = await axios.post('https://agrolens-l9z7.onrender.com/api/token/refresh/', {
           refresh: refreshToken,
         });
 
